@@ -1,0 +1,39 @@
+{
+  "channels": [
+    {
+      "name": "Aspirants360",
+      "handle": "@aspirants360",
+      "channel_id": "UC7tS4Q_e_wCXDwj99t5adyg",
+      "owned": false,
+      "notes": "Channel ID auto-resolved from handle on first run"
+    },
+    {
+      "name": "SimplyTimepass",
+      "handle": "@simplytimepass",
+      "channel_id": "UCCCQS7SWQkbCg9sXwx7K5gA",
+      "owned": false,
+      "notes": "Channel ID auto-resolved from handle on first run"
+    },
+    {
+      "name": "SimplyEmpressOfficial",
+      "handle": "@simplyempressofficial",
+      "channel_id": "UCNYGDqy0o9kvF08xvGqkS9A",
+      "owned": false,
+      "notes": "Channel ID auto-resolved from handle on first run"
+    },
+    {
+      "name": "SimplyCinema",
+      "handle": "@simplycinema",
+      "channel_id": "UC-ETOmNXzSiINM4HIwT0mNg",
+      "owned": false,
+      "notes": "Channel ID auto-resolved from handle on first run"
+    },
+    {
+      "name": "SimplyKarur",
+      "handle": "@simplykarur",
+      "channel_id": "UCJJ2GLUDepqhnGvJalcjr7g",
+      "owned": false,
+      "notes": "Channel ID auto-resolved from handle on first run"
+    }
+  ]
+}

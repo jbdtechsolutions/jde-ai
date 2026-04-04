@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Analytics Dashboard</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ── Design tokens ────────────────────────────────────────────────── */
+    :root {
+      --yt-red:      #FF0000;
+      --yt-red-soft: #FF4444;
+
+      /* dark */
+      --bg-base:     #0f0f0f;
+      --bg-card:     #1a1a1a;
+      --bg-card-2:   #242424;
+      --bg-hover:    #2e2e2e;
+      --border:      #333;
+      --text-1:      #f1f1f1;
+      --text-2:      #aaa;
+      --text-3:      #666;
+      --accent:      #FF0000;
+      --accent-soft: rgba(255,0,0,.12);
+      --shadow:      0 4px 24px rgba(0,0,0,.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base:     #f5f5f5;
+      --bg-card:     #ffffff;
+      --bg-card-2:   #f0f0f0;
+      --bg-hover:    #e8e8e8;
+      --border:      #e0e0e0;
+      --text-1:      #0f0f0f;
+      --text-2:      #555;
+      --text-3:      #999;
+      --accent:      #c00;
+      --accent-soft: rgba(192,0,0,.1);
+      --shadow:      0 4px 24px rgba(0,0,0,.08);
+    }
+
+    /* ── Reset / base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-1);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .page { max-width: 1280px; margin: 0 auto; padding: 0 24px 80px; }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .yt-logo {
+      background: var(--yt-red);
+      border-radius: 8px;
+      width: 40px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .yt-logo svg { width: 22px; fill: white; }
+    header h1 { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+    header p  { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    #last-updated { font-size: 12px; color: var(--text-3); }
+
+    /* theme toggle */
+    .theme-btn {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+      border-radius: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: background .2s;
+    }
+    .theme-btn:hover { background: var(--bg-hover); }
+
+    /* refresh btn */
+    .refresh-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      display: flex; align-items: center; gap: 6px;
+      transition: opacity .2s;
+    }
+    .refresh-btn:hover { opacity: .85; }
+    .refresh-btn.loading { opacity: .6; pointer-events: none; }
+
+    /* ── Channel tabs ─────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+    .tab {
+      padding: 7px 18px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all .2s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .tab:hover { border-color: var(--accent); color: var(--text-1); }
+    .tab.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .tab .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .tab.active .dot { opacity: 1; }
+
+    /* ── Channel panel ────────────────────────────────────────────────── */
+    .channel-panel { display: none; }
+    .channel-panel.active { display: block; }
+
+    /* ── Channel hero ─────────────────────────────────────────────────── */
+    .channel-hero {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      box-shadow: var(--shadow);
+    }
+    .channel-avatar {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--yt-red), #ff6b35);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      font-weight: 700;
+      color: white;
+      flex-shrink: 0;
+      letter-spacing: -.5px;
+    }
+    .channel-info { flex: 1; min-width: 0; }
+    .channel-info h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .channel-meta {
+      display: flex; flex-wrap: wrap; gap: 12px;
+      margin-top: 8px;
+    }
+    .meta-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px;
+      color: var(--text-2);
+      background: var(--bg-card-2);
+      border-radius: 6px;
+      padding: 3px 10px;
+    }
+    .channel-desc {
+      font-size: 13px;
+      color: var(--text-2);
+      margin-top: 10px;
+      line-height: 1.7;
+    }
+    .channel-actions { display: flex; gap: 10px; align-self: center; }
+    .btn-outline {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-1);
+      border-radius: 8px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: all .2s;
+    }
+    .btn-outline:hover { background: var(--bg-hover); text-decoration: none; }
+
+    /* ── Stat cards ───────────────────────────────────────────────────── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 3px;
+      background: var(--card-color, var(--accent));
+    }
+    .stat-icon {
+      font-size: 22px;
+      margin-bottom: 12px;
+      display: block;
+    }
+    .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--text-3);
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      line-height: 1;
+    }
+    .stat-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-top: 6px;
+    }
+
+    /* ── Section header ───────────────────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .badge {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* ── Two-col layout ───────────────────────────────────────────────── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── Card wrapper ─────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── Chart container ──────────────────────────────────────────────── */
+    .chart-wrap {
+      position: relative;
+      height: 260px;
+    }
+
+    /* ── Videos table ─────────────────────────────────────────────────── */
+    .videos-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .videos-card .card-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* search */
+    .table-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card-2);
+    }
+    .search-box {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      flex: 1; max-width: 340px;
+    }
+    .search-box input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-1);
+      font-size: 13px;
+      font-family: inherit;
+      width: 100%;
+    }
+    .search-box input::placeholder { color: var(--text-3); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead th {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--text-3);
+      padding: 12px 16px;
+      text-align: left;
+      background: var(--bg-card-2);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    thead th:hover { color: var(--text-1); }
+    thead th .sort-icon { margin-left: 4px; opacity: .4; }
+    thead th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--bg-hover); }
+
+    td {
+      padding: 14px 16px;
+      font-size: 13px;
+      vertical-align: middle;
+    }
+
+    .video-title-cell {
+      max-width: 380px;
+    }
+    .video-title {
+      font-weight: 500;
+      color: var(--text-1);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .video-date { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+    .num { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .bar-cell { min-width: 120px; }
+    .bar-wrap {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+      transition: width .4s;
+    }
+    .tag {
+      display: inline-block;
+      background: var(--bg-card-2);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    /* ── Engagement mini bars ────────────────────────────────────────── */
+    .engage-row { display: flex; gap: 12px; margin-top: 16px; }
+    .engage-item { flex: 1; }
+    .engage-label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+    .engage-val { font-size: 16px; font-weight: 700; }
+
+    /* ── Empty / loading ──────────────────────────────────────────────── */
+    .loading-state, .empty-state {
+      text-align: center;
+      padding: 64px 24px;
+      color: var(--text-2);
+    }
+    .loading-state .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; display: block; }
+
+    /* ── Scrollable table container ──────────────────────────────────── */
+    .table-scroll { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+
+    /* ── Footer ───────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-3);
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── Header ────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <div class="yt-logo">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.52 3.5 12 3.5 12 3.5s-7.52 0-9.38.55A3.02 3.02 0 0 0 .5 6.19C0 8.07 0 12 0 12s0 3.93.5 5.81a3.02 3.02 0 0 0 2.12 2.14C4.48 20.5 12 20.5 12 20.5s7.52 0 9.38-.55a3.02 3.02 0 0 0 2.12-2.14C24 15.93 24 12 24 12s0-3.93-.5-5.81zM9.75 15.5V8.5l6.25 3.5-6.25 3.5z"/>
+        </svg>
+      </div>
+      <div>
+        <h1>YouTube Analytics</h1>
+        <p>Channel performance dashboard</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="last-updated"></span>
+      <button class="theme-btn" onclick="toggleTheme()">☀ / ☾</button>
+      <button class="refresh-btn" id="refresh-btn" onclick="loadData()">
+        <span>⟳</span> Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
+  <div class="tabs" id="tabs"></div>
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  <div id="content">
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading analytics data…</p>
+    </div>
+  </div>
+
+  <footer id="footer" style="display:none;">
+    Data fetched via YouTube Data API v3 &nbsp;·&nbsp; Powered by jde-ai
+  </footer>
+</div>
+
+<script>
+/* ──────────────────────────────────────────────────────────────────────────
+   Utility helpers
+   ────────────────────────────────────────────────────────────────────── */
+const fmt = (n) => {
+  if (n === null || n === undefined) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+  return n.toLocaleString();
+};
+
+const fmtFull = (n) => (n ?? 0).toLocaleString();
+
+const fmtDate = (iso) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+};
+
+const fmtRelDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const diff = (Date.now() - d) / 864e5;
+  if (diff < 1)   return 'today';
+  if (diff < 2)   return 'yesterday';
+  if (diff < 7)   return `${Math.floor(diff)}d ago`;
+  if (diff < 30)  return `${Math.floor(diff/7)}w ago`;
+  if (diff < 365) return `${Math.floor(diff/30)}mo ago`;
+  return `${Math.floor(diff/365)}y ago`;
+};
+
+const initials = (name='') =>
+  name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Charts registry (destroy before re-creating)
+   ────────────────────────────────────────────────────────────────────── */
+const charts = {};
+function safeChart(id, cfg) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, cfg);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Theme
+   ────────────────────────────────────────────────────────────────────── */
+function toggleTheme() {
+  const curr = document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = curr === 'dark' ? 'light' : 'dark';
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Sort state per channel
+   ────────────────────────────────────────────────────────────────────── */
+const sortState = {};
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Render helpers
+   ────────────────────────────────────────────────────────────────────── */
+function renderHero(ch, ps) {
+  const handle = ps.custom_url ? `@${ps.custom_url.replace('@','')}` : ch;
+  return `
+    <div class="channel-hero">
+      <div class="channel-avatar">${initials(ps.title || ch)}</div>
+      <div class="channel-info">
+        <h2>${ps.title || ch}</h2>
+        <div class="channel-meta">
+          <span class="meta-tag">📺 ${handle}</span>
+          ${ps.country ? `<span class="meta-tag">🌍 ${ps.country}</span>` : ''}
+          <span class="meta-tag">📅 Since ${fmtDate(ps.published_at)}</span>
+          <span class="meta-tag">🕐 Updated ${fmtDate(ps.fetched_at)}</span>
+        </div>
+        ${ps.description ? `<p class="channel-desc">${ps.description.slice(0, 220)}${ps.description.length > 220 ? '…' : ''}</p>` : ''}
+      </div>
+      <div class="channel-actions">
+        <a class="btn-outline" href="https://www.youtube.com/${handle}" target="_blank">
+          ↗ Open Channel
+        </a>
+      </div>
+    </div>`;
+}
+
+function renderStats(ps) {
+  const cards = [
+    { icon: '👥', label: 'Subscribers',  value: fmt(ps.subscriber_count),  sub: ps.hidden_subscriber_count ? 'Hidden' : fmtFull(ps.subscriber_count), color: '#FF0000' },
+    { icon: '👁️', label: 'Total Views',   value: fmt(ps.view_count),         sub: fmtFull(ps.view_count) + ' views', color: '#FF6B35' },
+    { icon: '🎬', label: 'Videos',        value: fmt(ps.video_count),        sub: fmtFull(ps.video_count) + ' uploads', color: '#FF9500' },
+    { icon: '📊', label: 'Avg Views/Video',
+      value: ps.video_count ? fmt(Math.round(ps.view_count / ps.video_count)) : '—',
+      sub: 'per video lifetime',
+      color: '#FF5E57'
+    },
+  ];
+  return `<div class="stat-grid">
+    ${cards.map(c => `
+      <div class="stat-card" style="--card-color:${c.color}">
+        <span class="stat-icon">${c.icon}</span>
+        <div class="stat-label">${c.label}</div>
+        <div class="stat-value">${c.value}</div>
+        <div class="stat-sub">${c.sub}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function renderEngagementChart(slug, videos) {
+  const top = [...videos].sort((a,b) => b.view_count - a.view_count).slice(0, 10);
+  const labels = top.map(v => v.title.length > 30 ? v.title.slice(0, 30) + '…' : v.title);
+  const views  = top.map(v => v.view_count);
+  const likes  = top.map(v => v.like_count);
+
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+  const fontColor = isDark ? '#aaa' : '#555';
+
+  safeChart(`chart-views-${slug}`, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Views',
+          data: views,
+          backgroundColor: 'rgba(255,0,0,.7)',
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+        {
+          label: 'Likes',
+          data: likes,
+          backgroundColor: 'rgba(255,107,53,.7)',
+          borderRadius: 4,
+          borderSkipped: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: fontColor, boxWidth: 12, font: { size: 12 } } },
+        tooltip: { mode: 'index', intersect: false }
+      },
+      scales: {
+        x: {
+          ticks: { color: fontColor, maxRotation: 40, font: { size: 10 } },
+          grid: { color: gridColor },
+        },
+        y: {
+          ticks: {
+            color: fontColor, font: { size: 11 },
+            callback: v => fmt(v)
+          },
+          grid: { color: gridColor },
+        }
+      }
+    }
+  });
+}
+
+function renderPublishedChart(slug, videos) {
+  // group by year
+  const byYear = {};
+  videos.forEach(v => {
+    const yr = new Date(v.published_at).getFullYear();
+    byYear[yr] = (byYear[yr] || 0) + 1;
+  });
+  const years  = Object.keys(byYear).sort();
+  const counts = years.map(y => byYear[y]);
+
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+  const fontColor = isDark ? '#aaa' : '#555';
+
+  safeChart(`chart-pub-${slug}`, {
+    type: 'line',
+    data: {
+      labels: years,
+      datasets: [{
+        label: 'Videos published',
+        data: counts,
+        borderColor: '#FF0000',
+        backgroundColor: 'rgba(255,0,0,.15)',
+        fill: true,
+        tension: .4,
+        pointBackgroundColor: '#FF0000',
+        pointRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: fontColor, boxWidth: 12, font: { size: 12 } } } },
+      scales: {
+        x: { ticks: { color: fontColor }, grid: { color: gridColor } },
+        y: { ticks: { color: fontColor, precision: 0 }, grid: { color: gridColor } }
+      }
+    }
+  });
+}
+
+function sortVideos(slug, videos, col, dir) {
+  return [...videos].sort((a, b) => {
+    const av = a[col] ?? 0, bv = b[col] ?? 0;
+    if (typeof av === 'string') return dir * av.localeCompare(bv);
+    return dir * (av - bv);
+  });
+}
+
+function renderTable(slug, videos) {
+  const ss = sortState[slug] || { col: 'view_count', dir: -1 };
+  const sorted = sortVideos(slug, videos, ss.col, ss.dir);
+  const maxViews = Math.max(...videos.map(v => v.view_count), 1);
+
+  const cols = [
+    { key: 'title',         label: 'Video' },
+    { key: 'published_at',  label: 'Published' },
+    { key: 'view_count',    label: 'Views' },
+    { key: 'like_count',    label: 'Likes' },
+    { key: 'comment_count', label: 'Comments' },
+  ];
+
+  const ths = cols.map(c => {
+    const active = ss.col === c.key;
+    const icon = active ? (ss.dir === 1 ? '▲' : '▼') : '⇅';
+    return `<th class="${active ? 'sorted' : ''}"
+              onclick="handleSort('${slug}', '${c.key}')">
+              ${c.label} <span class="sort-icon">${icon}</span>
+            </th>`;
+  }).join('');
+
+  const rows = sorted.map(v => {
+    const pct = Math.round((v.view_count / maxViews) * 100);
+    return `
+      <tr>
+        <td class="video-title-cell">
+          <a class="video-title" href="${v.url}" target="_blank" title="${v.title}">${v.title}</a>
+          <div class="video-date">${fmtRelDate(v.published_at)}</div>
+        </td>
+        <td class="num tag">${fmtDate(v.published_at)}</td>
+        <td class="bar-cell">
+          <div class="num">${fmtFull(v.view_count)}</div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+        </td>
+        <td class="num">👍 ${fmtFull(v.like_count)}</td>
+        <td class="num">💬 ${fmtFull(v.comment_count)}</td>
+      </tr>`;
+  }).join('');
+
+  return `<table id="tbl-${slug}">
+    <thead><tr>${ths}</tr></thead>
+    <tbody id="tbody-${slug}">${rows}</tbody>
+  </table>`;
+}
+
+function handleSort(slug, col) {
+  const ss = sortState[slug] || { col: 'view_count', dir: -1 };
+  sortState[slug] = {
+    col,
+    dir: ss.col === col ? -ss.dir : -1
+  };
+  // re-render just the table area
+  const data = window.__reports__[slug];
+  if (!data) return;
+  const tbody = document.getElementById(`tbody-${slug}`);
+  const videos = data.recent_videos || [];
+  const sorted = sortVideos(slug, videos, sortState[slug].col, sortState[slug].dir);
+  const maxViews = Math.max(...videos.map(v => v.view_count), 1);
+
+  tbody.innerHTML = sorted.map(v => {
+    const pct = Math.round((v.view_count / maxViews) * 100);
+    return `
+      <tr>
+        <td class="video-title-cell">
+          <a class="video-title" href="${v.url}" target="_blank">${v.title}</a>
+          <div class="video-date">${fmtRelDate(v.published_at)}</div>
+        </td>
+        <td class="num tag">${fmtDate(v.published_at)}</td>
+        <td class="bar-cell">
+          <div class="num">${fmtFull(v.view_count)}</div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+        </td>
+        <td class="num">👍 ${fmtFull(v.like_count)}</td>
+        <td class="num">💬 ${fmtFull(v.comment_count)}</td>
+      </tr>`;
+  }).join('');
+
+  // update sort icons in header
+  const table = document.getElementById(`tbl-${slug}`);
+  if (table) {
+    table.querySelectorAll('thead th').forEach(th => {
+      th.classList.remove('sorted');
+      th.querySelector('.sort-icon').textContent = '⇅';
+    });
+    const cols = ['title','published_at','view_count','like_count','comment_count'];
+    const idx  = cols.indexOf(sortState[slug].col);
+    if (idx !== -1) {
+      const th = table.querySelectorAll('thead th')[idx];
+      th.classList.add('sorted');
+      th.querySelector('.sort-icon').textContent = sortState[slug].dir === 1 ? '▲' : '▼';
+    }
+  }
+}
+
+/* search filter */
+function filterTable(slug, query) {
+  const tbody = document.getElementById(`tbody-${slug}`);
+  if (!tbody) return;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const title = tr.querySelector('.video-title')?.textContent || '';
+    tr.style.display = title.toLowerCase().includes(query.toLowerCase()) ? '' : 'none';
+  });
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Render a single channel panel
+   ────────────────────────────────────────────────────────────────────── */
+function renderChannel(report) {
+  const ps     = report.public_stats || {};
+  const videos = report.recent_videos || [];
+  const slug   = (report.channel || 'ch').toLowerCase().replace(/\s+/g, '_');
+
+  let html = '';
+
+  // Hero
+  html += renderHero(report.channel, ps);
+
+  // Stats
+  html += renderStats(ps);
+
+  // Charts row
+  if (videos.length) {
+    html += `
+      <div class="two-col" style="margin-bottom:24px;">
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title">Top Videos by Views <span class="badge">${Math.min(videos.length, 10)}</span></div>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-views-${slug}"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title">Upload Activity by Year</div>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-pub-${slug}"></canvas></div>
+        </div>
+      </div>`;
+  }
+
+  // Quick engagement summary
+  if (videos.length) {
+    const totalViews    = videos.reduce((s, v) => s + v.view_count, 0);
+    const totalLikes    = videos.reduce((s, v) => s + v.like_count, 0);
+    const totalComments = videos.reduce((s, v) => s + v.comment_count, 0);
+    const engRate = totalViews > 0
+      ? ((totalLikes + totalComments) / totalViews * 100).toFixed(2)
+      : '0.00';
+
+    html += `
+      <div class="card" style="margin-bottom:24px;">
+        <div class="section-title" style="margin-bottom:16px;">Engagement Summary <small style="font-weight:400;color:var(--text-3);">(recent ${videos.length} videos)</small></div>
+        <div class="engage-row">
+          <div class="engage-item">
+            <div class="engage-label">TOTAL VIEWS</div>
+            <div class="engage-val">${fmt(totalViews)}</div>
+          </div>
+          <div class="engage-item">
+            <div class="engage-label">TOTAL LIKES</div>
+            <div class="engage-val">${fmt(totalLikes)}</div>
+          </div>
+          <div class="engage-item">
+            <div class="engage-label">TOTAL COMMENTS</div>
+            <div class="engage-val">${fmt(totalComments)}</div>
+          </div>
+          <div class="engage-item">
+            <div class="engage-label">ENGAGEMENT RATE</div>
+            <div class="engage-val" style="color:var(--accent)">${engRate}%</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Videos table
+  if (videos.length) {
+    html += `
+      <div class="videos-card">
+        <div class="card-header">
+          <div class="section-title">Recent Videos <span class="badge">${videos.length}</span></div>
+        </div>
+        <div class="table-toolbar">
+          <div class="search-box">
+            <span style="color:var(--text-3);">🔍</span>
+            <input type="text" placeholder="Search videos…"
+                   oninput="filterTable('${slug}', this.value)" />
+          </div>
+          <span style="font-size:12px;color:var(--text-3);">Click column headers to sort</span>
+        </div>
+        <div class="table-scroll">
+          ${renderTable(slug, videos)}
+        </div>
+      </div>`;
+  } else {
+    html += `<div class="empty-state"><span class="icon">🎬</span><p>No recent video data available.</p></div>`;
+  }
+
+  // Analytics block (if owned channel with detailed data)
+  if (report.analytics && report.analytics.rows && report.analytics.rows.length) {
+    html += renderAnalyticsSection(slug, report.analytics);
+  }
+
+  return { slug, html };
+}
+
+function renderAnalyticsSection(slug, analytics) {
+  const headers = analytics.headers || [];
+  const rows    = analytics.rows    || [];
+
+  const dayIdx   = headers.indexOf('day');
+  const viewIdx  = headers.indexOf('views');
+  const watchIdx = headers.indexOf('estimatedMinutesWatched');
+
+  if (dayIdx === -1) return '';
+
+  const labels = rows.map(r => r[dayIdx]);
+  const views  = viewIdx  !== -1 ? rows.map(r => +r[viewIdx])  : null;
+  const watch  = watchIdx !== -1 ? rows.map(r => +r[watchIdx]) : null;
+
+  let html = `
+    <div class="card" style="margin-bottom:24px;">
+      <div class="section-header">
+        <div class="section-title">Analytics (${analytics.start_date} → ${analytics.end_date})</div>
+      </div>
+      <div class="chart-wrap" style="height:280px;">
+        <canvas id="chart-analytics-${slug}"></canvas>
+      </div>
+    </div>`;
+
+  // schedule chart draw after DOM insertion
+  window.__pendingAnalytics__ = window.__pendingAnalytics__ || {};
+  window.__pendingAnalytics__[slug] = { labels, views, watch };
+
+  return html;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Tab switching
+   ────────────────────────────────────────────────────────────────────── */
+function showTab(slug) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.slug === slug));
+  document.querySelectorAll('.channel-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${slug}`));
+  // draw charts for this panel
+  drawChartsFor(slug);
+}
+
+function drawChartsFor(slug) {
+  const data = window.__reports__[slug];
+  if (!data) return;
+  const videos = data.recent_videos || [];
+  if (videos.length) {
+    renderEngagementChart(slug, videos);
+    renderPublishedChart(slug, videos);
+  }
+  // analytics
+  const pending = (window.__pendingAnalytics__ || {})[slug];
+  if (pending) {
+    const isDark    = document.documentElement.dataset.theme === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+    const fontColor = isDark ? '#aaa' : '#555';
+    const datasets  = [];
+    if (pending.views) datasets.push({ label: 'Views', data: pending.views, borderColor: '#FF0000', backgroundColor: 'rgba(255,0,0,.15)', fill: true, tension: .4, yAxisID: 'y' });
+    if (pending.watch) datasets.push({ label: 'Watch minutes', data: pending.watch, borderColor: '#FF9500', backgroundColor: 'rgba(255,149,0,.1)', fill: true, tension: .4, yAxisID: 'y1' });
+    safeChart(`chart-analytics-${slug}`, {
+      type: 'line',
+      data: { labels: pending.labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: fontColor, font: { size: 12 } } } },
+        scales: {
+          x: { ticks: { color: fontColor, maxTicksLimit: 10 }, grid: { color: gridColor } },
+          y:  { type: 'linear', position: 'left',  ticks: { color: '#FF0000', callback: v => fmt(v) }, grid: { color: gridColor } },
+          y1: { type: 'linear', position: 'right', ticks: { color: '#FF9500', callback: v => fmt(v) }, grid: { drawOnChartArea: false } },
+        }
+      }
+    });
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Main data load
+   ────────────────────────────────────────────────────────────────────── */
+window.__reports__ = {};
+window.__pendingAnalytics__ = {};
+
+async function loadData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('loading');
+  btn.querySelector('span').style.animation = 'spin .6s linear infinite';
+
+  try {
+    const resp = await fetch('/api/reports');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const reports = await resp.json();
+
+    if (!reports.length) {
+      document.getElementById('content').innerHTML = `
+        <div class="empty-state">
+          <span class="icon">📭</span>
+          <p>No reports found. Run <code>python yt_multi_channel.py</code> first.</p>
+        </div>`;
+      return;
+    }
+
+    // Build index
+    window.__reports__ = {};
+    window.__pendingAnalytics__ = {};
+    const panels = reports.map(r => {
+      const { slug, html } = renderChannel(r);
+      window.__reports__[slug] = r;
+      return { slug, name: r.channel, html };
+    });
+
+    // Render tabs
+    const tabsEl = document.getElementById('tabs');
+    tabsEl.innerHTML = panels.map((p, i) => `
+      <button class="tab ${i === 0 ? 'active' : ''}"
+              data-slug="${p.slug}"
+              onclick="showTab('${p.slug}')">
+        <span class="dot"></span>${p.name}
+      </button>`).join('');
+
+    // Render panels
+    document.getElementById('content').innerHTML = panels.map((p, i) => `
+      <div class="channel-panel ${i === 0 ? 'active' : ''}" id="panel-${p.slug}">
+        ${p.html}
+      </div>`).join('');
+
+    // Draw charts for the first tab
+    if (panels.length) drawChartsFor(panels[0].slug);
+
+    // Last updated
+    const now = new Date().toLocaleTimeString();
+    document.getElementById('last-updated').textContent = `Updated ${now}`;
+    document.getElementById('footer').style.display = '';
+
+  } catch (err) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <span class="icon">⚠️</span>
+        <p>Could not load data: ${err.message}</p>
+        <p style="margin-top:8px;font-size:12px;color:var(--text-3);">
+          Make sure the server is running: <code>python dashboard/serve.py</code>
+        </p>
+      </div>`;
+  } finally {
+    btn.classList.remove('loading');
+    btn.querySelector('span').style.animation = '';
+  }
+}
+
+// Initial load
+loadData();
+</script>
+</body>
+</html>

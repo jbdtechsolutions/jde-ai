@@ -1,0 +1,26 @@
+# Virtual environments
+venv/
+.env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Secrets — never commit
+.env
+client_secrets.json
+token.json
+
+# API output (generated data)
+reports/
+
+# OS files
+.DS_Store
+
+# Build/dist
+build/
+dist/
+*.egg-info/
