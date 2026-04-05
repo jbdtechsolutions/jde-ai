@@ -17,6 +17,12 @@ token.json
 # API output (generated data)
 reports/
 
+# pywhatkit DB
+PyWhatKit_DB.txt
+
+# Claude local settings
+.claude/settings.local.json
+
 # OS files
 .DS_Store
 
