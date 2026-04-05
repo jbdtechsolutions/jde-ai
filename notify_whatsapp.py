@@ -1,24 +1,44 @@
 """
 notify_whatsapp.py
 ------------------
-Send YouTube analytics summaries to WhatsApp via Twilio.
+Send YouTube analytics summaries to WhatsApp.
 
-Setup (one-time):
-  1. Sign up at https://www.twilio.com (free trial works)
-  2. Go to Messaging → Try it out → Send a WhatsApp message
-  3. Join the sandbox: send the join code from your WhatsApp to +1 415 523 8886
-  4. Add the 3 Twilio vars to your .env file (see .env.example)
+Two modes (set WHATSAPP_MODE in .env):
 
-Usage (standalone):
-  python notify_whatsapp.py                        # notify from latest reports
-  python notify_whatsapp.py --report reports/x.json
+  individual  (default) — Twilio API, sends to one or more phone numbers
+  group                 — pywhatkit, sends to a WhatsApp group via WhatsApp Web
 
-Called automatically by yt_multi_channel.py --notify
+Individual setup:
+  WHATSAPP_MODE=individual
+  TWILIO_ACCOUNT_SID=ACxxx
+  TWILIO_AUTH_TOKEN=xxx
+  TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+  TWILIO_WHATSAPP_TO=whatsapp:+91XXXXXXXXXX,whatsapp:+91YYYYYYYYYY   (comma-separated)
+
+Group setup:
+  WHATSAPP_MODE=group
+  WHATSAPP_GROUP_ID=AABBCCxxxx   (see how to find it below)
+
+  How to find WHATSAPP_GROUP_ID:
+    1. Open WhatsApp Web (web.whatsapp.com) and open the group
+    2. Click group name → Invite via link
+    3. The link looks like:  https://chat.whatsapp.com/XXXXXXXXXXXXXX
+    4. The part after /  is your WHATSAPP_GROUP_ID
+
+Usage:
+  python notify_whatsapp.py                   # uses mode from .env
+  python notify_whatsapp.py --mode group
+  python notify_whatsapp.py --mode individual --to +919876543210
+  python notify_whatsapp.py --report reports/aspirants360_2026-04-04.json
+
+Called automatically by:
+  python yt_multi_channel.py --notify
 """
 
 import os
 import sys
 import json
+import time
 import pathlib
 import datetime
 import argparse
@@ -27,28 +47,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-try:
-    from twilio.rest import Client as TwilioClient
-except ImportError:
-    print("Twilio not installed. Run:  pip install twilio")
-    sys.exit(1)
-
-
 # ── config ─────────────────────────────────────────────────────────────────────
 
 REPORTS_DIR = pathlib.Path("reports")
 
-TWILIO_SID      = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_TOKEN    = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_FROM     = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")  # sandbox default
-TWILIO_TO       = os.getenv("TWILIO_WHATSAPP_TO")   # your number e.g. whatsapp:+919876543210
+WHATSAPP_MODE    = os.getenv("WHATSAPP_MODE", "individual").strip().lower()
+
+# Twilio (individual mode)
+TWILIO_SID       = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_TOKEN     = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_FROM      = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
+TWILIO_TO_RAW    = os.getenv("TWILIO_WHATSAPP_TO", "")
+
+# pywhatkit (group mode)
+WHATSAPP_GROUP_ID = os.getenv("WHATSAPP_GROUP_ID", "")
+
+# parse comma-separated recipients
+def _parse_recipients(raw: str) -> list[str]:
+    return [
+        r.strip() if r.strip().startswith("whatsapp:") else f"whatsapp:{r.strip()}"
+        for r in raw.split(",")
+        if r.strip()
+    ]
+
+TWILIO_RECIPIENTS = _parse_recipients(TWILIO_TO_RAW)
 
 
-# ── formatters ─────────────────────────────────────────────────────────────────
+# ── message formatter ──────────────────────────────────────────────────────────
 
 def fmt(n):
     if n is None:
-        return "—"
+        return "-"
     if n >= 1_000_000:
         return f"{n/1_000_000:.1f}M"
     if n >= 1_000:
@@ -57,11 +86,11 @@ def fmt(n):
 
 
 def build_message(reports: list[dict], date_label: str) -> str:
-    """Build a WhatsApp-friendly analytics summary message."""
-    lines = []
-    lines.append(f"📊 *YouTube Analytics Report*")
-    lines.append(f"🗓 _{date_label}_")
-    lines.append("")
+    lines = [
+        f"📊 *YouTube Analytics Report*",
+        f"🗓 _{date_label}_",
+        "",
+    ]
 
     for r in reports:
         ps     = r.get("public_stats", {})
@@ -79,105 +108,37 @@ def build_message(reports: list[dict], date_label: str) -> str:
             lines.append(f"📈 Avg Views/Video : *{fmt(avg)}*")
 
         if videos:
-            # engagement stats over recent videos
             total_views    = sum(v.get("view_count", 0)    for v in videos)
             total_likes    = sum(v.get("like_count", 0)    for v in videos)
             total_comments = sum(v.get("comment_count", 0) for v in videos)
 
-            lines.append("")
-            lines.append(f"_Recent {len(videos)} videos_")
-            lines.append(f"  👁 Views    : {fmt(total_views)}")
-            lines.append(f"  👍 Likes    : {fmt(total_likes)}")
-            lines.append(f"  💬 Comments : {fmt(total_comments)}")
+            lines += [
+                "",
+                f"_Recent {len(videos)} videos_",
+                f"  👁 Views    : {fmt(total_views)}",
+                f"  👍 Likes    : {fmt(total_likes)}",
+                f"  💬 Comments : {fmt(total_comments)}",
+            ]
 
-            # top video by views
-            top = max(videos, key=lambda v: v.get("view_count", 0))
-            title = top["title"]
-            if len(title) > 50:
-                title = title[:47] + "…"
-            lines.append("")
-            lines.append(f"🔥 *Top Video*")
-            lines.append(f'  "{title}"')
-            lines.append(f"  👁 {fmt(top['view_count'])} views  👍 {fmt(top['like_count'])} likes")
-            lines.append(f"  {top['url']}")
+            top   = max(videos, key=lambda v: v.get("view_count", 0))
+            title = top["title"][:47] + "…" if len(top["title"]) > 50 else top["title"]
+            lines += [
+                "",
+                f"🔥 *Top Video*",
+                f'  "{title}"',
+                f"  👁 {fmt(top['view_count'])} views  👍 {fmt(top['like_count'])} likes",
+                f"  {top['url']}",
+            ]
 
         lines.append("")
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("_Sent by jde-ai · YouTube Analytics_")
+    lines += ["━━━━━━━━━━━━━━━━━━━━", "_Sent by jde-ai · YouTube Analytics_"]
     return "\n".join(lines)
 
 
-# ── sender ──────────────────────────────────────────────────────────────────────
-
-def send_whatsapp(message: str, to: str = None) -> bool:
-    """Send message via Twilio WhatsApp. Returns True on success."""
-    sid   = TWILIO_SID
-    token = TWILIO_TOKEN
-    from_ = TWILIO_FROM
-    to_   = to or TWILIO_TO
-
-    missing = [k for k, v in {
-        "TWILIO_ACCOUNT_SID": sid,
-        "TWILIO_AUTH_TOKEN":  token,
-        "TWILIO_WHATSAPP_TO": to_,
-    }.items() if not v]
-
-    if missing:
-        print(f"[ERROR] Missing Twilio config in .env: {', '.join(missing)}")
-        return False
-
-    # ensure whatsapp: prefix
-    if not from_.startswith("whatsapp:"):
-        from_ = f"whatsapp:{from_}"
-    if not to_.startswith("whatsapp:"):
-        to_ = f"whatsapp:{to_}"
-
-    try:
-        client = TwilioClient(sid, token)
-        msg = client.messages.create(body=message, from_=from_, to=to_)
-        print(f"  WhatsApp sent  SID: {msg.sid}  status: {msg.status}")
-        return True
-    except Exception as e:
-        print(f"  [ERROR] WhatsApp send failed: {e}")
-        return False
-
-
-# ── report loader ───────────────────────────────────────────────────────────────
-
-def load_latest_reports() -> list[dict]:
-    """Load the most recent JSON report per channel from reports/."""
-    if not REPORTS_DIR.exists():
-        return []
-
-    latest: dict[str, pathlib.Path] = {}
-    for f in sorted(REPORTS_DIR.glob("*.json")):
-        if any(x in f.name for x in ("_videos_", "_analytics_", "summary")):
-            continue
-        parts = f.stem.rsplit("_", 1)
-        slug = parts[0] if len(parts) == 2 else f.stem
-        if slug not in latest or f.name > latest[slug].name:
-            latest[slug] = f
-
-    reports = []
-    for _, path in sorted(latest.items()):
-        try:
-            reports.append(json.loads(path.read_text(encoding="utf-8")))
-        except Exception:
-            pass
-    return reports
-
-
-# ── split long messages ─────────────────────────────────────────────────────────
-
 def split_message(text: str, max_len: int = 1500) -> list[str]:
-    """
-    WhatsApp has a ~4096 char limit per message.
-    We split at 1500 chars on channel boundaries to keep messages readable.
-    """
     if len(text) <= max_len:
         return [text]
-
     parts, chunk = [], []
     for line in text.splitlines(keepends=True):
         if sum(len(l) for l in chunk) + len(line) > max_len and chunk:
@@ -189,34 +150,152 @@ def split_message(text: str, max_len: int = 1500) -> list[str]:
     return parts
 
 
-# ── main ────────────────────────────────────────────────────────────────────────
+# ── individual sender (Twilio) ─────────────────────────────────────────────────
 
-def notify(reports: list[dict] = None, to: str = None) -> bool:
-    """Public entry point — called from yt_multi_channel.py."""
+def send_individual(message: str, recipients: list[str] = None) -> bool:
+    try:
+        from twilio.rest import Client as TwilioClient
+    except ImportError:
+        print("  [ERROR] twilio not installed. Run: pip install twilio")
+        return False
+
+    targets = recipients or TWILIO_RECIPIENTS
+    missing = [k for k, v in {"TWILIO_ACCOUNT_SID": TWILIO_SID, "TWILIO_AUTH_TOKEN": TWILIO_TOKEN}.items() if not v]
+    if missing:
+        print(f"  [ERROR] Missing Twilio config: {', '.join(missing)}")
+        return False
+    if not targets:
+        print("  [ERROR] No recipients. Set TWILIO_WHATSAPP_TO in .env")
+        return False
+
+    from_  = TWILIO_FROM if TWILIO_FROM.startswith("whatsapp:") else f"whatsapp:{TWILIO_FROM}"
+    client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+    ok     = True
+
+    parts = split_message(message)
+    for to in targets:
+        print(f"  → Sending to {to} …")
+        for i, part in enumerate(parts, 1):
+            suffix = f" ({i}/{len(parts)})" if len(parts) > 1 else ""
+            try:
+                msg = client.messages.create(body=part + suffix, from_=from_, to=to)
+                print(f"    Sent  SID={msg.sid}  status={msg.status}")
+            except Exception as e:
+                print(f"    [ERROR] {e}")
+                ok = False
+            if len(parts) > 1:
+                time.sleep(1)   # avoid rate limit between parts
+
+    return ok
+
+
+# ── group sender (pywhatkit → WhatsApp Web) ────────────────────────────────────
+
+def send_group(message: str, group_id: str = None) -> bool:
+    try:
+        import pywhatkit as pwk
+    except ImportError:
+        print("  [ERROR] pywhatkit not installed. Run: pip install pywhatkit")
+        return False
+
+    gid = group_id or WHATSAPP_GROUP_ID
+    if not gid:
+        print("  [ERROR] WHATSAPP_GROUP_ID not set in .env")
+        print("  Find it: WhatsApp group → Invite link → https://chat.whatsapp.com/<ID>")
+        return False
+
+    # schedule 2 minutes from now to give WhatsApp Web time to open
+    now       = datetime.datetime.now() + datetime.timedelta(minutes=2)
+    send_hour = now.hour
+    send_min  = now.minute
+
+    parts = split_message(message, max_len=1000)   # pywhatkit is more sensitive to length
+    print(f"  → Sending {len(parts)} message(s) to group {gid} at {send_hour:02d}:{send_min:02d} …")
+    print("  WhatsApp Web will open in your browser — keep it logged in.")
+
+    ok = True
+    for i, part in enumerate(parts):
+        try:
+            # wait_time=15: seconds to wait after opening browser before sending
+            # tab_close=True: closes the browser tab after sending
+            pwk.sendwhatmsg_to_group(
+                group_id=gid,
+                message=part,
+                time_hour=send_hour,
+                time_min=send_min,
+                wait_time=20,
+                tab_close=True,
+                close_time=5,
+            )
+            print(f"    Part {i+1}/{len(parts)} sent.")
+        except Exception as e:
+            print(f"    [ERROR] Part {i+1}: {e}")
+            ok = False
+
+        if i < len(parts) - 1:
+            # next part 1 minute later
+            nxt = datetime.datetime.now() + datetime.timedelta(minutes=1)
+            send_hour, send_min = nxt.hour, nxt.minute
+            time.sleep(5)
+
+    return ok
+
+
+# ── report loader ──────────────────────────────────────────────────────────────
+
+def load_latest_reports() -> list[dict]:
+    if not REPORTS_DIR.exists():
+        return []
+    latest: dict[str, pathlib.Path] = {}
+    for f in sorted(REPORTS_DIR.glob("*.json")):
+        if any(x in f.name for x in ("_videos_", "_analytics_", "summary")):
+            continue
+        parts = f.stem.rsplit("_", 1)
+        slug = parts[0] if len(parts) == 2 else f.stem
+        if slug not in latest or f.name > latest[slug].name:
+            latest[slug] = f
+    reports = []
+    for _, path in sorted(latest.items()):
+        try:
+            reports.append(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return reports
+
+
+# ── public entry point ─────────────────────────────────────────────────────────
+
+def notify(reports: list[dict] = None, mode: str = None,
+           to: str = None, group_id: str = None) -> bool:
+    """Called from yt_multi_channel.py --notify"""
     if reports is None:
         reports = load_latest_reports()
     if not reports:
         print("  [WARN] No reports to notify about.")
         return False
 
-    date_label = datetime.date.today().strftime("%d %b %Y")
-    message = build_message(reports, date_label)
+    active_mode = mode or WHATSAPP_MODE
+    date_label  = datetime.date.today().strftime("%d %b %Y")
+    message     = build_message(reports, date_label)
 
-    print(f"\n  Sending WhatsApp notification ({len(reports)} channel(s)) …")
+    print(f"\n  WhatsApp notification  mode={active_mode}  channels={len(reports)}")
 
-    parts = split_message(message)
-    ok = True
-    for i, part in enumerate(parts, 1):
-        suffix = f" ({i}/{len(parts)})" if len(parts) > 1 else ""
-        ok = send_whatsapp(part + suffix, to=to) and ok
+    if active_mode == "group":
+        return send_group(message, group_id=group_id)
+    else:
+        recipients = _parse_recipients(to) if to else None
+        return send_individual(message, recipients=recipients)
 
-    return ok
 
+# ── CLI ────────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Send YouTube analytics to WhatsApp")
-    parser.add_argument("--report", help="Specific JSON report file (default: latest in reports/)")
-    parser.add_argument("--to",     help="Recipient WhatsApp number e.g. +919876543210")
+    parser.add_argument("--mode",     choices=["individual", "group"],
+                        help="Override WHATSAPP_MODE from .env")
+    parser.add_argument("--to",       help="Individual recipient(s), comma-separated +91XXXXXXXXXX")
+    parser.add_argument("--group-id", help="WhatsApp group ID (override WHATSAPP_GROUP_ID)")
+    parser.add_argument("--report",   help="Specific JSON report file")
     args = parser.parse_args()
 
     if args.report:
@@ -228,11 +307,15 @@ def main():
     else:
         reports = load_latest_reports()
         if not reports:
-            print("No reports found. Run python yt_multi_channel.py first.")
+            print("No reports found. Run: python yt_multi_channel.py")
             sys.exit(1)
 
-    to = f"whatsapp:{args.to}" if args.to else None
-    success = notify(reports, to=to)
+    success = notify(
+        reports,
+        mode=args.mode,
+        to=args.to,
+        group_id=args.group_id,
+    )
     sys.exit(0 if success else 1)
 
 
